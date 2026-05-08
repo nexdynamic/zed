@@ -837,6 +837,11 @@ impl AutoUpdater {
                     .then(|| VersionCheckType::Sha(AppCommitSha::new(fetched_version)));
                 Ok(newer_version)
             }
+            ReleaseChannel::Nexdynamic => {
+                let fetched = parsed_fetched_version?;
+                let should_download = fetched > installed_version;
+                Ok(should_download.then(|| VersionCheckType::Semantic(fetched)))
+            }
             _ => Self::check_if_fetched_version_is_newer_non_nightly(
                 installed_version,
                 parsed_fetched_version?,

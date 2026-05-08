@@ -11,21 +11,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
       - name: Set release channel
         run: echo nexdynamic > crates/zed/RELEASE_CHANNEL
 
+      - name: Compute version tag
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ZED_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          # Find latest nex index for this zed version
+          LATEST=$(gh release list --limit 50 --json tagName -q '.[].tagName' \
+            | grep "^v${ZED_VERSION}-nex\." \
+            | sed "s/v${ZED_VERSION}-nex\.//" \
+            | sort -n | tail -1)
+          if [ -z "$LATEST" ]; then
+            NEX_INDEX=0
+          else
+            NEX_INDEX=$((LATEST + 1))
+          fi
+          TAG="v${ZED_VERSION}-nex.${NEX_INDEX}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${ZED_VERSION}-nex.${NEX_INDEX}" >> $GITHUB_OUTPUT
+
       - name: Bundle
         run: script/bundle-mac
+        env:
+          RUSTC_WRAPPER: sccache
+          ZED_APP_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Rename DMG by arch
         run: |
           ARCH=$(uname -m)
           mv "Zed Nexdynamic.dmg" "Zed-Nexdynamic-${ARCH}.dmg"
 
-      - name: Create or update rolling release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nexdynamic-latest
-          name: Nexdynamic (latest)
-          prerelease: true
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Nexdynamic ${{ steps.version.outputs.tag }}
           files: Zed-Nexdynamic-*.dmg

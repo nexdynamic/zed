@@ -35,9 +35,9 @@ use git::{
     repository::{
         Branch, CommitData, CommitDetails, CommitDiff, CommitFile, CommitOptions,
         CreateWorktreeTarget, DiffType, FetchOptions, GitCommitTemplate, GitRepository,
-        GitRepositoryCheckpoint, InitialGraphCommitData, LogOrder, LogSource, PushOptions, Remote,
-        RemoteCommandOutput, RepoPath, ResetMode, SearchCommitArgs, UpstreamTrackingStatus,
-        Worktree as GitWorktree,
+        GitRepositoryCheckpoint, HistoryOperationKind, InitialGraphCommitData, LogOrder, LogSource,
+        PushOptions, Remote, RemoteCommandOutput, RepoPath, ResetMode, SearchCommitArgs,
+        UpstreamTrackingStatus, Worktree as GitWorktree,
     },
     stash::{GitStash, StashEntry},
     status::{
@@ -288,6 +288,27 @@ pub struct RepositoryId(pub u64);
 pub struct MergeDetails {
     pub merge_heads_by_conflicted_path: TreeMap<RepoPath, Vec<Option<SharedString>>>,
     pub message: Option<SharedString>,
+    pub history_operation: Option<HistoryOperationState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryOperationProgress {
+    pub current_step: usize,
+    pub total_steps: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryOperationPhase {
+    InProgress,
+    Conflicts,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryOperationState {
+    pub kind: HistoryOperationKind,
+    pub phase: HistoryOperationPhase,
+    pub unresolved_conflict_count: usize,
+    pub progress: Option<HistoryOperationProgress>,
 }
 
 #[derive(Clone)]
@@ -4249,8 +4270,24 @@ impl MergeDetails {
             .into_iter()
             .map(|opt| opt.map(SharedString::from))
             .collect::<Vec<_>>();
+        let merge_head = heads.first().cloned().flatten();
+        let cherry_pick_head = heads.get(1).cloned().flatten();
+        let rebase_head = heads.get(2).cloned().flatten();
+        let revert_head = heads.get(3).cloned().flatten();
+        let apply_head = heads.get(4).cloned().flatten();
 
         let mut conflicts_changed = false;
+        let unresolved_conflict_count = current_conflicted_paths.len();
+
+        self.history_operation = detect_history_operation_state(
+            backend,
+            merge_head,
+            cherry_pick_head,
+            rebase_head,
+            revert_head,
+            apply_head,
+            unresolved_conflict_count,
+        );
 
         // Record the merge state for newly conflicted paths
         for path in &current_conflicted_paths {
@@ -4275,6 +4312,111 @@ impl MergeDetails {
 
         Ok(conflicts_changed)
     }
+}
+
+fn detect_history_operation_state(
+    backend: &Arc<dyn GitRepository>,
+    merge_head: Option<SharedString>,
+    cherry_pick_head: Option<SharedString>,
+    rebase_head: Option<SharedString>,
+    revert_head: Option<SharedString>,
+    apply_head: Option<SharedString>,
+    unresolved_conflict_count: usize,
+) -> Option<HistoryOperationState> {
+    let rebase_progress = read_rebase_progress(backend.path());
+    let kind = if rebase_head.is_some() || rebase_progress.is_some() {
+        Some(HistoryOperationKind::Rebase)
+    } else if cherry_pick_head.is_some() {
+        Some(HistoryOperationKind::CherryPick)
+    } else if revert_head.is_some() {
+        Some(HistoryOperationKind::Revert)
+    } else if apply_head.is_some() {
+        Some(HistoryOperationKind::Apply)
+    } else if merge_head.is_some() {
+        Some(HistoryOperationKind::Merge)
+    } else {
+        None
+    }?;
+
+    let progress = match kind {
+        HistoryOperationKind::Rebase => rebase_progress,
+        HistoryOperationKind::CherryPick
+        | HistoryOperationKind::Revert
+        | HistoryOperationKind::Apply => read_sequencer_progress(backend.path()),
+        HistoryOperationKind::Merge => None,
+    };
+
+    let phase = if unresolved_conflict_count > 0 {
+        HistoryOperationPhase::Conflicts
+    } else {
+        HistoryOperationPhase::InProgress
+    };
+
+    Some(HistoryOperationState {
+        kind,
+        phase,
+        unresolved_conflict_count,
+        progress,
+    })
+}
+
+fn read_rebase_progress(git_dir: PathBuf) -> Option<HistoryOperationProgress> {
+    let merge_dir = git_dir.join("rebase-merge");
+    if merge_dir.exists() {
+        return parse_progress_files(merge_dir.join("msgnum"), merge_dir.join("end"));
+    }
+
+    let apply_dir = git_dir.join("rebase-apply");
+    if apply_dir.exists() {
+        return parse_progress_files(apply_dir.join("next"), apply_dir.join("last"));
+    }
+
+    None
+}
+
+fn read_sequencer_progress(git_dir: PathBuf) -> Option<HistoryOperationProgress> {
+    parse_progress_files(
+        git_dir.join("sequencer").join("todo"),
+        git_dir.join("sequencer").join("todo"),
+    )
+}
+
+fn parse_progress_files(
+    current_path: PathBuf,
+    total_path: PathBuf,
+) -> Option<HistoryOperationProgress> {
+    // `sequencer/todo` is line-based; parse it differently than numeric progress files.
+    if current_path == total_path && current_path.file_name().is_some_and(|name| name == "todo") {
+        let todo_contents = std::fs::read_to_string(&current_path).ok()?;
+        let total_steps = todo_contents
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty() && !trimmed.starts_with('#')
+            })
+            .count();
+        if total_steps == 0 {
+            return None;
+        }
+        return Some(HistoryOperationProgress {
+            current_step: 1,
+            total_steps,
+        });
+    }
+
+    let current_step = std::fs::read_to_string(current_path)
+        .ok()
+        .and_then(|text| text.trim().parse::<usize>().ok())?;
+    let total_steps = std::fs::read_to_string(total_path)
+        .ok()
+        .and_then(|text| text.trim().parse::<usize>().ok())?;
+    if current_step == 0 || total_steps == 0 {
+        return None;
+    }
+    Some(HistoryOperationProgress {
+        current_step,
+        total_steps,
+    })
 }
 
 impl Repository {
@@ -6302,6 +6444,178 @@ impl Repository {
         })
     }
 
+    pub fn continue_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let status = format!("git {} --continue", kind.command_name());
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .continue_history_operation(kind, environment.clone(), cx)
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "History operation controls are only supported for local repositories"
+                )),
+            }
+        })
+    }
+
+    pub fn skip_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let status = format!("git {} --skip", kind.command_name());
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .skip_history_operation(kind, environment.clone(), cx)
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "History operation controls are only supported for local repositories"
+                )),
+            }
+        })
+    }
+
+    pub fn abort_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let status = format!("git {} --abort", kind.command_name());
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .abort_history_operation(kind, environment.clone(), cx)
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "History operation controls are only supported for local repositories"
+                )),
+            }
+        })
+    }
+
+    pub fn start_rebase(
+        &mut self,
+        base_ref: SharedString,
+        interactive: bool,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let mut status = "git rebase".to_string();
+        if interactive {
+            status.push_str(" -i");
+        }
+        status.push(' ');
+        status.push_str(base_ref.as_ref());
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .start_rebase(base_ref.to_string(), interactive, environment.clone(), cx)
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "Starting rebase is only supported for local repositories"
+                )),
+            }
+        })
+    }
+
+    pub fn start_cherry_pick(
+        &mut self,
+        commits: Vec<SharedString>,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let status = format!(
+            "git cherry-pick {}",
+            commits
+                .iter()
+                .map(|commit| commit.as_ref())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .start_cherry_pick(
+                            commits.iter().map(|commit| commit.to_string()).collect(),
+                            environment.clone(),
+                            cx,
+                        )
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "Starting cherry-pick is only supported for local repositories"
+                )),
+            }
+        })
+    }
+
+    pub fn start_revert(
+        &mut self,
+        commits: Vec<SharedString>,
+        _cx: &mut App,
+    ) -> oneshot::Receiver<Result<RemoteCommandOutput>> {
+        let status = format!(
+            "git revert {}",
+            commits
+                .iter()
+                .map(|commit| commit.as_ref())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        self.send_job(Some(status.into()), move |repo, cx| async move {
+            match repo {
+                RepositoryState::Local(LocalRepositoryState {
+                    backend,
+                    environment,
+                    ..
+                }) => {
+                    backend
+                        .start_revert(
+                            commits.iter().map(|commit| commit.to_string()).collect(),
+                            environment.clone(),
+                            cx,
+                        )
+                        .await
+                }
+                RepositoryState::Remote(_) => Err(anyhow!(
+                    "Starting revert is only supported for local repositories"
+                )),
+            }
+        })
+    }
+
     fn spawn_set_index_text_job(
         &mut self,
         path: RepoPath,
@@ -8289,6 +8603,32 @@ mod tests {
             let settings_store = SettingsStore::test(cx);
             cx.set_global(settings_store);
         });
+    }
+
+    #[test]
+    fn test_parse_progress_files_numeric() {
+        let temp = tempfile::tempdir().expect("create temp directory");
+        let current = temp.path().join("current");
+        let total = temp.path().join("total");
+        std::fs::write(&current, "2\n").expect("write current");
+        std::fs::write(&total, "7\n").expect("write total");
+
+        let progress = parse_progress_files(current, total).expect("parse progress");
+        assert_eq!(progress.current_step, 2);
+        assert_eq!(progress.total_steps, 7);
+    }
+
+    #[test]
+    fn test_read_rebase_progress_from_rebase_merge() {
+        let temp = tempfile::tempdir().expect("create temp directory");
+        let merge_dir = temp.path().join("rebase-merge");
+        std::fs::create_dir_all(&merge_dir).expect("create rebase-merge directory");
+        std::fs::write(merge_dir.join("msgnum"), "3\n").expect("write msgnum");
+        std::fs::write(merge_dir.join("end"), "9\n").expect("write end");
+
+        let progress = read_rebase_progress(temp.path().to_path_buf()).expect("read progress");
+        assert_eq!(progress.current_step, 3);
+        assert_eq!(progress.total_steps, 9);
     }
 
     fn verify_invariants(repository: &Repository) -> anyhow::Result<()> {

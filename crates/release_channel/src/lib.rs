@@ -32,6 +32,7 @@ pub fn app_identifier() -> &'static str {
         ReleaseChannel::Nightly => "Zed-Editor-Nightly",
         ReleaseChannel::Preview => "Zed-Editor-Preview",
         ReleaseChannel::Stable => "Zed-Editor-Stable",
+        ReleaseChannel::Nexdynamic => "Zed-Editor-Nexdynamic",
     }
 }
 
@@ -135,6 +136,9 @@ pub enum ReleaseChannel {
 
     /// The Stable release channel.
     Stable,
+
+    /// The Nexdynamic release channel.
+    Nexdynamic,
 }
 
 struct GlobalReleaseChannel(ReleaseChannel);
@@ -155,11 +159,12 @@ pub fn init_test(app_version: Version, release_channel: ReleaseChannel, cx: &mut
 
 impl ReleaseChannel {
     /// All release channels.
-    pub const ALL: [ReleaseChannel; 4] = [
+    pub const ALL: [ReleaseChannel; 5] = [
         ReleaseChannel::Dev,
         ReleaseChannel::Nightly,
         ReleaseChannel::Preview,
         ReleaseChannel::Stable,
+        ReleaseChannel::Nexdynamic,
     ];
 
     /// Returns the global [`ReleaseChannel`].
@@ -185,6 +190,7 @@ impl ReleaseChannel {
             ReleaseChannel::Nightly => "Zed Nightly",
             ReleaseChannel::Preview => "Zed Preview",
             ReleaseChannel::Stable => "Zed",
+            ReleaseChannel::Nexdynamic => "Zed Nexdynamic",
         }
     }
 
@@ -195,6 +201,7 @@ impl ReleaseChannel {
             ReleaseChannel::Nightly => "nightly",
             ReleaseChannel::Preview => "preview",
             ReleaseChannel::Stable => "stable",
+            ReleaseChannel::Nexdynamic => "nexdynamic",
         }
     }
 
@@ -207,6 +214,7 @@ impl ReleaseChannel {
             ReleaseChannel::Nightly => "dev.zed.Zed-Nightly",
             ReleaseChannel::Preview => "dev.zed.Zed-Preview",
             ReleaseChannel::Stable => "dev.zed.Zed",
+            ReleaseChannel::Nexdynamic => "com.nexdynamic.zed",
         }
     }
 
@@ -217,6 +225,7 @@ impl ReleaseChannel {
             Self::Nightly => Some("nightly=1"),
             Self::Preview => Some("preview=1"),
             Self::Stable => None,
+            Self::Nexdynamic => None,
         }
     }
 }
@@ -234,6 +243,7 @@ impl FromStr for ReleaseChannel {
             "nightly" => ReleaseChannel::Nightly,
             "preview" => ReleaseChannel::Preview,
             "stable" => ReleaseChannel::Stable,
+            "nexdynamic" => ReleaseChannel::Nexdynamic,
             _ => return Err(InvalidReleaseChannel),
         })
     }

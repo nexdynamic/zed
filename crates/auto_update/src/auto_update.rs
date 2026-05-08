@@ -318,6 +318,9 @@ pub fn release_notes_url(cx: &mut App) -> Option<String> {
             "https://github.com/zed-industries/zed/commits/nightly/".to_string()
         }
         ReleaseChannel::Dev => "https://github.com/zed-industries/zed/commits/main/".to_string(),
+        ReleaseChannel::Nexdynamic => {
+            "https://github.com/nexdynamic/zed/commits/nexdynamic/".to_string()
+        }
     };
     Some(url)
 }
@@ -589,6 +592,11 @@ impl AutoUpdater {
         cx: &mut AsyncApp,
     ) -> Result<ReleaseAsset> {
         let client = this.read_with(cx, |this, _| this.client.clone());
+        let http_client = client.http_client();
+
+        if release_channel == ReleaseChannel::Nexdynamic {
+            return Self::get_nexdynamic_release_asset(http_client, os, arch).await;
+        }
 
         let (system_id, metrics_id, is_staff) = if client.telemetry().metrics_enabled() {
             (
@@ -607,7 +615,6 @@ impl AutoUpdater {
         } else {
             "latest".to_string()
         };
-        let http_client = client.http_client();
 
         let path = format!("/releases/{}/{}/asset", release_channel.dev_name(), version,);
         let url = http_client.build_zed_cloud_url_with_query(
@@ -639,6 +646,66 @@ impl AutoUpdater {
                 "error deserializing release {:?}",
                 String::from_utf8_lossy(&body),
             )
+        })
+    }
+
+    async fn get_nexdynamic_release_asset(
+        http_client: Arc<HttpClientWithUrl>,
+        os: &str,
+        arch: &str,
+    ) -> Result<ReleaseAsset> {
+        #[derive(Deserialize)]
+        struct GithubAsset {
+            name: String,
+            browser_download_url: String,
+        }
+
+        #[derive(Deserialize)]
+        struct GithubRelease {
+            tag_name: String,
+            assets: Vec<GithubAsset>,
+        }
+
+        let mut response = http_client
+            .get(
+                "https://api.github.com/repos/nexdynamic/zed/releases/latest",
+                Default::default(),
+                true,
+            )
+            .await?;
+        let mut body = Vec::new();
+        response.body_mut().read_to_end(&mut body).await?;
+
+        anyhow::ensure!(
+            response.status().is_success(),
+            "failed to fetch Nexdynamic release from GitHub: {:?}",
+            String::from_utf8_lossy(&body),
+        );
+
+        let release: GithubRelease = serde_json::from_slice(&body).with_context(|| {
+            format!(
+                "error deserializing GitHub release {:?}",
+                String::from_utf8_lossy(&body),
+            )
+        })?;
+
+        let version = release
+            .tag_name
+            .trim_start_matches('v')
+            .to_string();
+
+        // Match asset by os and arch suffix, e.g. "Zed-Nexdynamic-aarch64.dmg"
+        let asset = release
+            .assets
+            .into_iter()
+            .find(|a| a.name.contains(arch) && a.name.ends_with(".dmg"))
+            .with_context(|| {
+                format!("no Nexdynamic DMG asset found for os={os} arch={arch}")
+            })?;
+
+        Ok(ReleaseAsset {
+            version,
+            url: asset.browser_download_url,
         })
     }
 

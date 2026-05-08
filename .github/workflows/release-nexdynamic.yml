@@ -1,0 +1,29 @@
+name: Release Nexdynamic
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set release channel
+        run: echo nexdynamic > crates/zed/RELEASE_CHANNEL
+
+      - name: Bundle
+        run: script/bundle-mac
+
+      - name: Rename DMGs by arch
+        run: |
+          ARCH=$(uname -m)
+          mv "Zed Nexdynamic.dmg" "Zed-Nexdynamic-${ARCH}.dmg" 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: Zed-Nexdynamic-*.dmg

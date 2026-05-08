@@ -2,7 +2,7 @@ name: Release Nexdynamic
 
 on:
   push:
-    tags: ['v*']
+    branches: [nexdynamic]
   workflow_dispatch:
 
 jobs:
@@ -17,13 +17,15 @@ jobs:
       - name: Bundle
         run: script/bundle-mac
 
-      - name: Rename DMGs by arch
+      - name: Rename DMG by arch
         run: |
           ARCH=$(uname -m)
-          mv "Zed Nexdynamic.dmg" "Zed-Nexdynamic-${ARCH}.dmg" 2>/dev/null || true
+          mv "Zed Nexdynamic.dmg" "Zed-Nexdynamic-${ARCH}.dmg"
 
-      - name: Create GitHub Release
+      - name: Create or update rolling release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: nexdynamic-latest
+          name: Nexdynamic (latest)
+          prerelease: true
           files: Zed-Nexdynamic-*.dmg

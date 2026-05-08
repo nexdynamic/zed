@@ -2,22 +2,39 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 * * * *'  # check hourly
   workflow_dispatch:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-antml:on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - run: |
+
+      - name: Check for new upstream release
+        id: check
+        run: |
+          UPSTREAM_TAG=$(curl -s https://api.github.com/repos/zed-industries/zed/releases/latest | jq -r '.tag_name')
+          LOCAL_TAG=$(git tag --sort=-version:refname | grep '^v' | head -1)
+          echo "upstream=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+          echo "local=$LOCAL_TAG" >> $GITHUB_OUTPUT
+          if [ "$UPSTREAM_TAG" = "$LOCAL_TAG" ]; then
+            echo "new=false" >> $GITHUB_OUTPUT
+          else
+            echo "new=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync if new release
+        if: steps.check.outputs.new == 'true'
+        run: |
+          echo "New upstream release: ${{ steps.check.outputs.upstream }} (had ${{ steps.check.outputs.local }})"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/zed-industries/zed.git
-          git fetch upstream main
+          git fetch upstream main --tags
           git merge upstream/main --no-edit
-          git push origin main
+          git push origin main --tags

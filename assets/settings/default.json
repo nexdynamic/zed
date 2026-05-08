@@ -157,6 +157,10 @@
   //
   // Default: true
   "restore_on_file_reopen": true,
+  // Whether to create an untitled buffer when opening an empty workspace.
+  //
+  // Default: true
+  "show_untitled_buffer_on_empty_workspace": true,
   // Whether to automatically close files that have been deleted on disk.
   "close_on_file_delete": false,
   // Whether toggling a panel (e.g. with its keyboard shortcut) also closes

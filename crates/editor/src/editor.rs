@@ -373,7 +373,9 @@ pub fn init(cx: &mut App) {
             cx,
             |workspace, window, cx| {
                 cx.activate(true);
-                Editor::new_file(workspace, &Default::default(), window, cx)
+                if WorkspaceSettings::get_global(cx).show_untitled_buffer_on_empty_workspace {
+                    Editor::new_file(workspace, &Default::default(), window, cx);
+                }
             },
         )
         .detach_and_log_err(cx);

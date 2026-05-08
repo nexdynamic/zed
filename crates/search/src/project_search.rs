@@ -2381,19 +2381,12 @@ impl Render for ProjectSearchBar {
         let search = search.read(cx);
         let focus_handle = search.focus_handle(cx);
         let is_panel_search = search.open_results_in_center_pane;
-
         let container_width = window.viewport_size().width;
         let input_width = SearchInputWidth::calc_width(container_width);
 
         let input_base_styles = |panel: InputPanel| {
             input_base_styles(search.border_color_for(panel, cx), |div| match panel {
-                InputPanel::Query | InputPanel::Replacement => {
-                    if is_panel_search {
-                        div.flex_1().min_w_0()
-                    } else {
-                        div.w(input_width)
-                    }
-                }
+                InputPanel::Query | InputPanel::Replacement => div.w(input_width),
                 InputPanel::Include | InputPanel::Exclude => div.flex_grow(),
             })
         };
@@ -2466,8 +2459,7 @@ impl Render for ProjectSearchBar {
                         SearchSource::Project(cx),
                         focus_handle.clone(),
                     )),
-            )
-            .when(is_panel_search, |this| this.flex_1().min_w_0());
+            );
 
         let matches_column = h_flex()
             .ml_1()
@@ -2530,7 +2522,8 @@ impl Render for ProjectSearchBar {
 
         let mode_column = h_flex()
             .gap_1()
-            .min_w_64()
+            .when(is_panel_search, |this| this.flex_none())
+            .when(!is_panel_search, |this| this.min_w_64())
             .child(
                 IconButton::new("project-search-filter-button", IconName::Filter)
                     .shape(IconButtonShape::Square)
@@ -2616,7 +2609,8 @@ impl Render for ProjectSearchBar {
 
             let focus_handle = search.replacement_editor.read(cx).focus_handle(cx);
             let replace_actions = h_flex()
-                .min_w_64()
+                .when(is_panel_search, |this| this.flex_none())
+                .when(!is_panel_search, |this| this.min_w_64())
                 .gap_1()
                 .child(render_action_button(
                     "project-search-replace-button",
@@ -2662,7 +2656,8 @@ impl Render for ProjectSearchBar {
                 .child(render_text_input(&search.excluded_files_editor, None, cx));
             let mode_column = h_flex()
                 .gap_1()
-                .min_w_64()
+                .when(is_panel_search, |this| this.flex_none())
+                .when(!is_panel_search, |this| this.min_w_64())
                 .child(
                     IconButton::new("project-search-opened-only", IconName::FolderSearch)
                         .shape(IconButtonShape::Square)

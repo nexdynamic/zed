@@ -80,6 +80,42 @@ actions!(
         Pull,
         /// Pulls changes from the remote repository with rebase.
         PullRebase,
+        /// Continues the current rebase operation.
+        RebaseContinue,
+        /// Skips the current rebase patch.
+        RebaseSkip,
+        /// Aborts the current rebase operation.
+        RebaseAbort,
+        /// Continues the current cherry-pick operation.
+        CherryPickContinue,
+        /// Skips the current cherry-pick patch.
+        CherryPickSkip,
+        /// Aborts the current cherry-pick operation.
+        CherryPickAbort,
+        /// Continues the current revert operation.
+        RevertContinue,
+        /// Skips the current revert patch.
+        RevertSkip,
+        /// Aborts the current revert operation.
+        RevertAbort,
+        /// Continues the current apply operation.
+        ApplyContinue,
+        /// Skips the current apply patch.
+        ApplySkip,
+        /// Aborts the current apply operation.
+        ApplyAbort,
+        /// Aborts the current merge operation.
+        MergeAbort,
+        /// Completes the current merge operation.
+        MergeComplete,
+        /// Starts a rebase operation.
+        StartRebase,
+        /// Starts an interactive rebase operation.
+        StartInteractiveRebase,
+        /// Starts a cherry-pick operation.
+        StartCherryPick,
+        /// Starts a revert operation.
+        StartRevert,
         /// Fetches changes from the remote repository.
         Fetch,
         /// Fetches changes from a specific remote.

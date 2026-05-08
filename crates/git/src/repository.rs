@@ -468,6 +468,27 @@ impl RemoteCommandOutput {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum HistoryOperationKind {
+    Rebase,
+    CherryPick,
+    Revert,
+    Apply,
+    Merge,
+}
+
+impl HistoryOperationKind {
+    pub fn command_name(self) -> &'static str {
+        match self {
+            Self::Rebase => "rebase",
+            Self::CherryPick => "cherry-pick",
+            Self::Revert => "revert",
+            Self::Apply => "am",
+            Self::Merge => "merge",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct UpstreamTrackingStatus {
     pub ahead: u32,
     pub behind: u32,
@@ -931,6 +952,49 @@ pub trait GitRepository: Send + Sync {
         env: Arc<HashMap<String, String>>,
         // This method takes an AsyncApp to ensure it's invoked on the main thread,
         // otherwise git-credentials-manager won't work.
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn continue_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn skip_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn abort_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn start_rebase(
+        &self,
+        base_ref: String,
+        interactive: bool,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn start_cherry_pick(
+        &self,
+        commits: Vec<String>,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
+
+    fn start_revert(
+        &self,
+        commits: Vec<String>,
+        env: Arc<HashMap<String, String>>,
         cx: AsyncApp,
     ) -> BoxFuture<'_, Result<RemoteCommandOutput>>;
 
@@ -2468,6 +2532,221 @@ impl GitRepository for RealGitRepository {
         .boxed()
     }
 
+    fn continue_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't continue operation")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&[kind.command_name(), "--continue"]);
+            command
+                .envs(env.iter())
+                // Continue can invoke commit-message editing (rebase/cherry-pick/revert/merge).
+                // Force a non-interactive editor to avoid blocking the UI.
+                .env("GIT_EDITOR", "true")
+                .env("GIT_SEQUENCE_EDITOR", "true")
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
+    fn skip_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't skip operation step")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&[kind.command_name(), "--skip"]);
+            command
+                .envs(env.iter())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
+    fn abort_history_operation(
+        &self,
+        kind: HistoryOperationKind,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't abort operation")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&[kind.command_name(), "--abort"]);
+            command
+                .envs(env.iter())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
+    fn start_rebase(
+        &self,
+        base_ref: String,
+        interactive: bool,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't rebase")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&["rebase"]);
+            command.envs(env.iter());
+            if interactive {
+                command.arg("-i");
+                command.env("GIT_SEQUENCE_EDITOR", ":");
+            }
+            command
+                .arg(base_ref)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
+    fn start_cherry_pick(
+        &self,
+        commits: Vec<String>,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            if commits.is_empty() {
+                bail!("No commits provided for cherry-pick");
+            }
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't cherry-pick")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&["cherry-pick"]);
+            command
+                .envs(env.iter())
+                .arg("--no-edit")
+                .args(commits)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
+    fn start_revert(
+        &self,
+        commits: Vec<String>,
+        env: Arc<HashMap<String, String>>,
+        cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<RemoteCommandOutput>> {
+        let working_directory = self.working_directory();
+        let git_directory = self.path();
+        let executor = cx.background_executor().clone();
+        let git_binary_path = self.system_git_binary_path.clone();
+        let is_trusted = self.is_trusted();
+        async move {
+            if commits.is_empty() {
+                bail!("No commits provided for revert");
+            }
+            let git_binary_path =
+                git_binary_path.context("git not found on $PATH, can't revert")?;
+            let working_directory = working_directory?;
+            let git = GitBinary::new(
+                git_binary_path,
+                working_directory,
+                git_directory,
+                executor,
+                is_trusted,
+            );
+            let mut command = git.build_command(&["revert"]);
+            command
+                .envs(env.iter())
+                .arg("--no-edit")
+                .args(commits)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            run_plain_git_command(command).await
+        }
+        .boxed()
+    }
+
     fn get_push_remote(&self, branch: String) -> BoxFuture<'_, Result<Option<Remote>>> {
         let git_binary = self.git_binary();
         self.executor
@@ -3488,6 +3767,21 @@ async fn run_askpass_command(
             })
         }
     }
+}
+
+async fn run_plain_git_command(
+    mut command: util::command::Command,
+) -> anyhow::Result<RemoteCommandOutput> {
+    let output = command.output().await?;
+    anyhow::ensure!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(RemoteCommandOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
 }
 
 #[derive(Clone, Ord, Hash, PartialOrd, Eq, PartialEq)]

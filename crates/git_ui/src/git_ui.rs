@@ -196,6 +196,206 @@ pub fn init(cx: &mut App) {
                     panel.pull(true, window, cx);
                 });
             });
+            workspace.register_action(|workspace, _: &git::StartRebase, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.start_rebase(false, window, cx);
+                });
+            });
+            workspace.register_action(|workspace, _: &git::StartInteractiveRebase, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.start_rebase(true, window, cx);
+                });
+            });
+            workspace.register_action(|workspace, _: &git::StartCherryPick, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    GitHistoryRefsModal::new(panel, GitHistoryRefsAction::CherryPick, window, cx)
+                });
+            });
+            workspace.register_action(|workspace, _: &git::StartRevert, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    GitHistoryRefsModal::new(panel, GitHistoryRefsAction::Revert, window, cx)
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RebaseContinue, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.continue_history_operation(
+                        git::repository::HistoryOperationKind::Rebase,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RebaseSkip, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.skip_history_operation(
+                        git::repository::HistoryOperationKind::Rebase,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RebaseAbort, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.abort_history_operation(
+                        git::repository::HistoryOperationKind::Rebase,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::CherryPickContinue, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.continue_history_operation(
+                        git::repository::HistoryOperationKind::CherryPick,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::CherryPickSkip, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.skip_history_operation(
+                        git::repository::HistoryOperationKind::CherryPick,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::CherryPickAbort, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.abort_history_operation(
+                        git::repository::HistoryOperationKind::CherryPick,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RevertContinue, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.continue_history_operation(
+                        git::repository::HistoryOperationKind::Revert,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RevertSkip, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.skip_history_operation(
+                        git::repository::HistoryOperationKind::Revert,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::RevertAbort, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.abort_history_operation(
+                        git::repository::HistoryOperationKind::Revert,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::ApplyContinue, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.continue_history_operation(
+                        git::repository::HistoryOperationKind::Apply,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::ApplySkip, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.skip_history_operation(
+                        git::repository::HistoryOperationKind::Apply,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::ApplyAbort, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.abort_history_operation(
+                        git::repository::HistoryOperationKind::Apply,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::MergeAbort, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.abort_history_operation(
+                        git::repository::HistoryOperationKind::Merge,
+                        window,
+                        cx,
+                    );
+                });
+            });
+            workspace.register_action(|workspace, _: &git::MergeComplete, window, cx| {
+                let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
+                    return;
+                };
+                panel.update(cx, |panel, cx| {
+                    panel.continue_history_operation(
+                        git::repository::HistoryOperationKind::Merge,
+                        window,
+                        cx,
+                    );
+                });
+            });
         }
         workspace.register_action(|workspace, action: &git::StashAll, window, cx| {
             let Some(panel) = workspace.panel::<git_panel::GitPanel>(cx) else {
@@ -1142,6 +1342,92 @@ impl Render for GitCloneModal {
 impl EventEmitter<DismissEvent> for GitCloneModal {}
 
 impl ModalView for GitCloneModal {}
+
+#[derive(Clone, Copy)]
+enum GitHistoryRefsAction {
+    CherryPick,
+    Revert,
+}
+
+struct GitHistoryRefsModal {
+    panel: Entity<GitPanel>,
+    refs_input: Entity<Editor>,
+    focus_handle: FocusHandle,
+    action: GitHistoryRefsAction,
+}
+
+impl GitHistoryRefsModal {
+    fn new(
+        panel: Entity<GitPanel>,
+        action: GitHistoryRefsAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let placeholder = match action {
+            GitHistoryRefsAction::CherryPick => "Enter commit refs (space-separated)…",
+            GitHistoryRefsAction::Revert => "Enter commit refs (space-separated)…",
+        };
+        let refs_input = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text(placeholder, window, cx);
+            editor
+        });
+        let focus_handle = refs_input.focus_handle(cx);
+        window.focus(&focus_handle, cx);
+        Self {
+            panel,
+            refs_input,
+            focus_handle,
+            action,
+        }
+    }
+}
+
+impl Focusable for GitHistoryRefsModal {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for GitHistoryRefsModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .elevation_3(cx)
+            .w(rems(34.))
+            .flex_1()
+            .overflow_hidden()
+            .child(
+                div()
+                    .w_full()
+                    .p_2()
+                    .border_b_1()
+                    .border_color(cx.theme().colors().border_variant)
+                    .child(self.refs_input.clone()),
+            )
+            .on_action(cx.listener(|_, _: &menu::Cancel, _, cx| {
+                cx.emit(DismissEvent);
+            }))
+            .on_action(cx.listener(|this, _: &menu::Confirm, window, cx| {
+                let refs_text = this.refs_input.read(cx).text(cx);
+                let refs: Vec<SharedString> = refs_text
+                    .split(|ch: char| ch.is_whitespace() || ch == ',')
+                    .filter(|entry| !entry.is_empty())
+                    .map(SharedString::from)
+                    .collect();
+                if refs.is_empty() {
+                    return;
+                }
+                this.panel.update(cx, |panel, cx| match this.action {
+                    GitHistoryRefsAction::CherryPick => panel.start_cherry_pick(refs, window, cx),
+                    GitHistoryRefsAction::Revert => panel.start_revert(refs, window, cx),
+                });
+                cx.emit(DismissEvent);
+            }))
+    }
+}
+
+impl EventEmitter<DismissEvent> for GitHistoryRefsModal {}
+impl ModalView for GitHistoryRefsModal {}
 
 #[cfg(test)]
 mod view_commit_tests {

@@ -13,8 +13,8 @@ use git::{
     repository::{
         AskPassDelegate, Branch, CommitData, CommitDataReader, CommitDetails, CommitOptions,
         CreateWorktreeTarget, FetchOptions, GRAPH_CHUNK_SIZE, GitRepository,
-        GitRepositoryCheckpoint, InitialGraphCommitData, LogOrder, LogSource, PushOptions, RefEdit,
-        Remote, RepoPath, ResetMode, SearchCommitArgs, Worktree,
+        GitRepositoryCheckpoint, HistoryOperationKind, InitialGraphCommitData, LogOrder, LogSource,
+        PushOptions, RefEdit, Remote, RepoPath, ResetMode, SearchCommitArgs, Worktree,
     },
     stash::GitStash,
     status::{
@@ -1063,6 +1063,85 @@ impl GitRepository for FakeGitRepository {
         _cx: AsyncApp,
     ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
         unimplemented!()
+    }
+
+    fn continue_history_operation(
+        &self,
+        _kind: HistoryOperationKind,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
+    }
+
+    fn skip_history_operation(
+        &self,
+        _kind: HistoryOperationKind,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
+    }
+
+    fn abort_history_operation(
+        &self,
+        _kind: HistoryOperationKind,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
+    }
+
+    fn start_rebase(
+        &self,
+        _base_ref: String,
+        _interactive: bool,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
+    }
+
+    fn start_cherry_pick(
+        &self,
+        _commits: Vec<String>,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
+    }
+
+    fn start_revert(
+        &self,
+        _commits: Vec<String>,
+        _env: Arc<HashMap<String, String>>,
+        _cx: AsyncApp,
+    ) -> BoxFuture<'_, Result<git::repository::RemoteCommandOutput>> {
+        future::ready(Ok(git::repository::RemoteCommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        }))
+        .boxed()
     }
 
     fn get_all_remotes(&self) -> BoxFuture<'_, Result<Vec<Remote>>> {

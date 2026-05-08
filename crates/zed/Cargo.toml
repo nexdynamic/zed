@@ -304,5 +304,13 @@ osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
 osx_url_schemes = ["zed"]
 
+[package.metadata.bundle-nexdynamic]
+icon = ["resources/app-icon-nightly@2x.png", "resources/app-icon-nightly.png"]
+identifier = "com.nexdynamic.zed"
+name = "Zed Nexdynamic"
+osx_minimum_system_version = "10.15.7"
+osx_info_plist_exts = ["resources/info/*"]
+osx_url_schemes = ["zed"]
+
 [package.metadata.cargo-machete]
 ignored = ["profiling", "zstd", "tracing"]

@@ -4508,9 +4508,11 @@ impl Render for Pane {
                                         }
                                     },
                                 ));
-                            if has_worktrees || !self.should_display_welcome_page {
-                                placeholder
-                            } else {
+                            let should_show_welcome_page = self.should_display_welcome_page
+                                && (!has_worktrees
+                                    || !WorkspaceSettings::get_global(cx)
+                                        .show_untitled_buffer_on_empty_workspace);
+                            if should_show_welcome_page {
                                 if self.welcome_page.is_none() {
                                     let workspace = self.workspace.clone();
                                     self.welcome_page = Some(cx.new(|cx| {
@@ -4520,6 +4522,8 @@ impl Render for Pane {
                                     }));
                                 }
                                 placeholder.child(self.welcome_page.clone().unwrap())
+                            } else {
+                                placeholder
                             }
                         }
                         .focus_follows_mouse(self.focus_follows_mouse, cx)

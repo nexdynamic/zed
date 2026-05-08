@@ -30,7 +30,10 @@ use util::debug_panic;
 use util::paths::PathWithPosition;
 use workspace::PathList;
 use workspace::item::ItemHandle;
-use workspace::{AppState, MultiWorkspace, OpenOptions, OpenResult, SerializedWorkspaceLocation};
+use workspace::{
+    AppState, MultiWorkspace, OpenOptions, OpenResult, SerializedWorkspaceLocation,
+    WorkspaceSettings,
+};
 
 #[derive(Default, Debug)]
 pub struct OpenRequest {
@@ -678,7 +681,9 @@ async fn open_workspaces(
                     ..Default::default()
                 };
                 workspace::open_new(open_options, app_state, cx, |workspace, window, cx| {
-                    Editor::new_file(workspace, &Default::default(), window, cx)
+                    if WorkspaceSettings::get_global(cx).show_untitled_buffer_on_empty_workspace {
+                        Editor::new_file(workspace, &Default::default(), window, cx);
+                    }
                 })
                 .detach_and_log_err(cx);
             });

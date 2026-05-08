@@ -168,6 +168,26 @@ fn general_page(cx: &App) -> SettingsPage {
                 files: USER,
             }),
             SettingsPageItem::SettingItem(SettingItem {
+                title: "Show Untitled Buffer on Empty Workspace",
+                description: "Create an untitled buffer when opening an empty workspace instead of showing the welcome screen.",
+                field: Box::new(SettingField {
+                    json_path: Some("show_untitled_buffer_on_empty_workspace"),
+                    pick: |settings_content| {
+                        settings_content
+                            .workspace
+                            .show_untitled_buffer_on_empty_workspace
+                            .as_ref()
+                    },
+                    write: |settings_content, value, _| {
+                        settings_content
+                            .workspace
+                            .show_untitled_buffer_on_empty_workspace = value;
+                    },
+                }),
+                metadata: None,
+                files: USER,
+            }),
+            SettingsPageItem::SettingItem(SettingItem {
                 title: "Use System Path Prompts",
                 description: "Use native OS dialogs for 'Open' and 'Save As'.",
                 field: Box::new(SettingField {

@@ -63,6 +63,10 @@ pub struct WorkspaceSettingsContent {
     ///
     /// Default: true
     pub restore_on_file_reopen: Option<bool>,
+    /// Whether to create an untitled buffer when opening an empty workspace.
+    ///
+    /// Default: true
+    pub show_untitled_buffer_on_empty_workspace: Option<bool>,
     /// The size of the workspace split drop targets on the outer edges.
     /// Given as a fraction that will be multiplied by the smaller dimension of the workspace.
     ///

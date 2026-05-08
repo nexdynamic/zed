@@ -1152,21 +1152,23 @@ fn register_actions(
                     cx,
                     |workspace, window, cx| {
                         cx.activate(true);
-                        // Create buffer synchronously to avoid flicker
-                        let project = workspace.project().clone();
-                        let buffer = project.update(cx, |project, cx| {
-                            project.create_local_buffer("", None, true, cx)
-                        });
-                        let editor = cx.new(|cx| {
-                            Editor::for_buffer(buffer, Some(project), window, cx)
-                        });
-                        workspace.add_item_to_active_pane(
-                            Box::new(editor),
-                            None,
-                            true,
-                            window,
-                            cx,
-                        );
+                        if WorkspaceSettings::get_global(cx).show_untitled_buffer_on_empty_workspace
+                        {
+                            // Create buffer synchronously to avoid flicker
+                            let project = workspace.project().clone();
+                            let buffer = project.update(cx, |project, cx| {
+                                project.create_local_buffer("", None, true, cx)
+                            });
+                            let editor =
+                                cx.new(|cx| Editor::for_buffer(buffer, Some(project), window, cx));
+                            workspace.add_item_to_active_pane(
+                                Box::new(editor),
+                                None,
+                                true,
+                                window,
+                                cx,
+                            );
+                        }
                     },
                 )
                 .detach();
@@ -1201,20 +1203,24 @@ fn register_actions(
                                 cx,
                                 |workspace, window, cx| {
                                     cx.activate(true);
-                                    let project = workspace.project().clone();
-                                    let buffer = project.update(cx, |project, cx| {
-                                        project.create_local_buffer("", None, true, cx)
-                                    });
-                                    let editor = cx.new(|cx| {
-                                        Editor::for_buffer(buffer, Some(project), window, cx)
-                                    });
-                                    workspace.add_item_to_active_pane(
-                                        Box::new(editor),
-                                        None,
-                                        true,
-                                        window,
-                                        cx,
-                                    );
+                                    if WorkspaceSettings::get_global(cx)
+                                        .show_untitled_buffer_on_empty_workspace
+                                    {
+                                        let project = workspace.project().clone();
+                                        let buffer = project.update(cx, |project, cx| {
+                                            project.create_local_buffer("", None, true, cx)
+                                        });
+                                        let editor = cx.new(|cx| {
+                                            Editor::for_buffer(buffer, Some(project), window, cx)
+                                        });
+                                        workspace.add_item_to_active_pane(
+                                            Box::new(editor),
+                                            None,
+                                            true,
+                                            window,
+                                            cx,
+                                        );
+                                    }
                                 },
                             )
                         })?;
@@ -6602,5 +6608,66 @@ mod tests {
             keys.is_empty(),
             "project group should be removed after CloseProject: {keys:?}"
         );
+    }
+
+    #[gpui::test]
+    async fn test_close_project_can_leave_workspace_on_welcome_screen(cx: &mut TestAppContext) {
+        use workspace::OpenMode;
+
+        let app_state = init_test(cx);
+        cx.update_global::<SettingsStore, _>(|store, cx| {
+            store.update_user_settings(cx, |settings| {
+                settings.workspace.show_untitled_buffer_on_empty_workspace = Some(false);
+            });
+        });
+        app_state
+            .fs
+            .as_fake()
+            .insert_tree(path!("/my-project"), json!({}))
+            .await;
+
+        let workspace::OpenResult { window, .. } = cx
+            .update(|cx| {
+                workspace::Workspace::new_local(
+                    vec![path!("/my-project").into()],
+                    app_state.clone(),
+                    None,
+                    None,
+                    None,
+                    OpenMode::Activate,
+                    cx,
+                )
+            })
+            .await
+            .unwrap();
+
+        cx.dispatch_action(window.into(), CloseProject);
+        cx.run_until_parked();
+
+        window
+            .read_with(cx, |multi_workspace, cx| {
+                assert!(
+                    multi_workspace
+                        .workspace()
+                        .read(cx)
+                        .active_item(cx)
+                        .is_none()
+                );
+            })
+            .unwrap();
+
+        cx.dispatch_action(window.into(), NewFile);
+        cx.run_until_parked();
+
+        window
+            .read_with(cx, |multi_workspace, cx| {
+                let item = multi_workspace
+                    .workspace()
+                    .read(cx)
+                    .active_item(cx)
+                    .expect("explicit NewFile should still create an item");
+                assert!(item.downcast::<Editor>().is_some());
+            })
+            .unwrap();
     }
 }

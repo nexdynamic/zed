@@ -689,19 +689,14 @@ impl AutoUpdater {
             )
         })?;
 
-        let version = release
-            .tag_name
-            .trim_start_matches('v')
-            .to_string();
+        let version = release.tag_name.trim_start_matches('v').to_string();
 
         // Match asset by os and arch suffix, e.g. "Zed-Nexdynamic-aarch64.dmg"
         let asset = release
             .assets
             .into_iter()
             .find(|a| a.name.contains(arch) && a.name.ends_with(".dmg"))
-            .with_context(|| {
-                format!("no Nexdynamic DMG asset found for os={os} arch={arch}")
-            })?;
+            .with_context(|| format!("no Nexdynamic DMG asset found for os={os} arch={arch}"))?;
 
         Ok(ReleaseAsset {
             version,
@@ -839,7 +834,29 @@ impl AutoUpdater {
             }
             ReleaseChannel::Nexdynamic => {
                 let fetched = parsed_fetched_version?;
-                let should_download = fetched > installed_version;
+                let fetched_nex = fetched.pre.as_str()
+                    .strip_prefix("nex.")
+                    .and_then(|s| s.parse::<u64>().ok());
+                let installed_nex = installed_version.pre.as_str()
+                    .strip_prefix("nex.")
+                    .and_then(|s| s.parse::<u64>().ok());
+                let mut fetched_base = fetched.clone();
+                fetched_base.pre = semver::Prerelease::EMPTY;
+                fetched_base.build = semver::BuildMetadata::EMPTY;
+                let mut installed_base = installed_version.clone();
+                installed_base.pre = semver::Prerelease::EMPTY;
+                installed_base.build = semver::BuildMetadata::EMPTY;
+                let should_download = if fetched_base != installed_base {
+                    fetched_base > installed_base
+                } else {
+                    // Same base version: compare nex indices.
+                    // If installed has no nex index (local/dev build), always update.
+                    match (fetched_nex, installed_nex) {
+                        (Some(f), Some(i)) => f > i,
+                        (Some(_), None) => true,
+                        _ => false,
+                    }
+                };
                 Ok(should_download.then(|| VersionCheckType::Semantic(fetched)))
             }
             _ => Self::check_if_fetched_version_is_newer_non_nightly(

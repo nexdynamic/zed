@@ -7,7 +7,7 @@ ZED_VERSION=$(grep '^version' crates/zed/Cargo.toml | head -1 | cut -d'"' -f2)
 LATEST=$(gh release list --limit 50 --json tagName -q '.[].tagName' \
   | grep "^v${ZED_VERSION}-nex\." \
   | sed "s/v${ZED_VERSION}-nex\.//" \
-  | sort -n | tail -1)
+  | sort -n | tail -1 || true)
 
 if [ -z "$LATEST" ]; then
   NEX_INDEX=0

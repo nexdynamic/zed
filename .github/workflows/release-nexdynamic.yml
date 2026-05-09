@@ -22,7 +22,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ZED_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          ZED_VERSION=$(grep '^version' crates/zed/Cargo.toml | head -1 | cut -d'"' -f2)
           # Find latest nex index for this zed version
           LATEST=$(gh release list --limit 50 --json tagName -q '.[].tagName' \
             | grep "^v${ZED_VERSION}-nex\." \

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ZED_VERSION=$(grep '^version' crates/zed/Cargo.toml | head -1 | cut -d'"' -f2)
+
+# Find next nex index
+LATEST=$(gh release list --limit 50 --json tagName -q '.[].tagName' \
+  | grep "^v${ZED_VERSION}-nex\." \
+  | sed "s/v${ZED_VERSION}-nex\.//" \
+  | sort -n | tail -1)
+
+if [ -z "$LATEST" ]; then
+  NEX_INDEX=0
+else
+  NEX_INDEX=$((LATEST + 1))
+fi
+
+TAG="v${ZED_VERSION}-nex.${NEX_INDEX}"
+VERSION="${ZED_VERSION}-nex.${NEX_INDEX}"
+
+echo "Building Nexdynamic ${VERSION}..."
+
+echo nexdynamic > crates/zed/RELEASE_CHANNEL
+ZED_APP_VERSION="${VERSION}" script/bundle-mac
+
+DMG="target/aarch64-apple-darwin/release/Zed-aarch64.dmg"
+if [ ! -f "$DMG" ]; then
+  DMG="target/x86_64-apple-darwin/release/Zed-x86_64.dmg"
+fi
+
+echo "Creating GitHub release ${TAG}..."
+gh release create "${TAG}" \
+  "${DMG}" \
+  --title "Nexdynamic ${TAG}" \
+  --notes "Nexdynamic build ${TAG}"
+
+echo "Done: ${TAG}"

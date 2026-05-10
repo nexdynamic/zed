@@ -25,6 +25,7 @@ echo "${NEX_INDEX}" > crates/zed/NEX_INDEX
 trap 'echo "" > crates/zed/NEX_INDEX' EXIT
 
 echo nexdynamic > crates/zed/RELEASE_CHANNEL
+cargo clean -p auto_update 2>/dev/null || true
 script/bundle-mac
 
 DMG="target/aarch64-apple-darwin/release/Zed-aarch64.dmg"

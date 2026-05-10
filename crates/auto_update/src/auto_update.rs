@@ -853,7 +853,10 @@ impl AutoUpdater {
                     // If installed has no nex index (local/dev build), always update.
                     match (fetched_nex, installed_nex) {
                         (Some(f), Some(i)) => f > i,
-                        (Some(_), None) => true,
+                        (Some(_), None) => {
+                            log::warn!("Auto Update: installed Nexdynamic build has no nex version index — was it built without ZED_APP_VERSION? Skipping update to avoid loop.");
+                            false
+                        }
                         _ => false,
                     }
                 };

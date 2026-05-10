@@ -1,15 +1,14 @@
 use crate::{
-    NewFile, Open, OpenMode, PathList, SerializedWorkspaceLocation, ToggleWorkspaceSidebar,
-    Workspace, WorkspaceId,
+    NewFile, Open, OpenMode, PathList, RecentWorkspace, SerializedWorkspaceLocation,
+    ToggleWorkspaceSidebar, Workspace,
     item::{Item, ItemEvent},
     persistence::WorkspaceDb,
 };
 use agent_settings::AgentSettings;
-use chrono::{DateTime, Utc};
 use git::Clone as GitClone;
 use gpui::{
     Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable, Global, InteractiveElement,
-    ParentElement, Render, Styled, Task, Window, actions,
+    ParentElement, Render, Styled, Task, TaskExt, Window, actions,
 };
 use gpui::{WeakEntity, linear_color_stop, linear_gradient};
 use menu::{SelectNext, SelectPrevious};
@@ -281,14 +280,7 @@ pub struct WelcomePage {
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     fallback_to_recent_projects: bool,
-    recent_workspaces: Option<
-        Vec<(
-            WorkspaceId,
-            SerializedWorkspaceLocation,
-            PathList,
-            DateTime<Utc>,
-        )>,
-    >,
+    recent_workspaces: Option<Vec<RecentWorkspace>>,
 }
 
 impl WelcomePage {
@@ -349,34 +341,28 @@ impl WelcomePage {
         cx: &mut Context<Self>,
     ) {
         if let Some(recent_workspaces) = &self.recent_workspaces {
-            if let Some((workspace_id, location, paths, _timestamp)) =
-                recent_workspaces.get(action.index)
-            {
+            if let Some(recent_workspace) = recent_workspaces.get(action.index) {
                 let request = RecentWorkspaceOpenRequest {
-                    workspace_id: *workspace_id,
-                    location: location.clone(),
-                    paths: paths.clone(),
+                    workspace_id: recent_workspace.workspace_id,
+                    location: recent_workspace.location.clone(),
+                    paths: recent_workspace.paths.clone(),
                 };
                 if open_recent_workspace(request, self.workspace.clone(), window, cx) {
                     return;
                 }
 
-                match location {
-                    SerializedWorkspaceLocation::Local => {
-                        let paths = paths.clone();
-                        let paths = paths.paths().to_vec();
-                        self.workspace
-                            .update(cx, |workspace, cx| {
-                                workspace
-                                    .open_workspace_for_paths(OpenMode::Activate, paths, window, cx)
-                                    .detach_and_log_err(cx);
-                            })
-                            .log_err();
-                    }
-                    SerializedWorkspaceLocation::Remote(_) => {
-                        use zed_actions::OpenRecent;
-                        window.dispatch_action(OpenRecent::default().boxed_clone(), cx);
-                    }
+                if matches!(recent_workspace.location, SerializedWorkspaceLocation::Local) {
+                    let paths = recent_workspace.paths.paths().to_vec();
+                    self.workspace
+                        .update(cx, |workspace, cx| {
+                            workspace
+                                .open_workspace_for_paths(OpenMode::Activate, paths, window, cx)
+                                .detach_and_log_err(cx);
+                        })
+                        .log_err();
+                } else {
+                    use zed_actions::OpenRecent;
+                    window.dispatch_action(OpenRecent::default().boxed_clone(), cx);
                 }
             }
         }
@@ -482,8 +468,13 @@ impl Render for WelcomePage {
             .flatten()
             .take(5)
             .enumerate()
-            .map(|(index, (_, loc, paths, _))| {
-                self.render_recent_project(index, first_section_entries + index, loc, paths)
+            .map(|(index, workspace)| {
+                self.render_recent_project(
+                    index,
+                    first_section_entries + index,
+                    &workspace.location,
+                    &workspace.identity_paths,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -758,12 +749,13 @@ mod tests {
             let welcome = cx.new(|cx| WelcomePage::new(workspace.downgrade(), false, window, cx));
             welcome.update(cx, |welcome, cx| {
                 let path_list_paths = [project_path.clone()];
-                welcome.recent_workspaces = Some(vec![(
-                    WorkspaceId(1),
-                    SerializedWorkspaceLocation::Remote(remote_connection.clone()),
-                    PathList::new(&path_list_paths),
-                    Utc::now(),
-                )]);
+                welcome.recent_workspaces = Some(vec![RecentWorkspace {
+                    workspace_id: WorkspaceId(1),
+                    location: SerializedWorkspaceLocation::Remote(remote_connection.clone()),
+                    paths: PathList::new(&path_list_paths),
+                    identity_paths: PathList::new(&path_list_paths),
+                    timestamp: chrono::Utc::now(),
+                }]);
                 welcome.open_recent_project(&OpenRecentProject { index: 0 }, window, cx);
             });
         });
@@ -816,12 +808,13 @@ mod tests {
             let welcome = cx.new(|cx| WelcomePage::new(workspace.downgrade(), false, window, cx));
             welcome.update(cx, |welcome, cx| {
                 let path_list_paths = [project_path.clone()];
-                welcome.recent_workspaces = Some(vec![(
-                    WorkspaceId(1),
-                    SerializedWorkspaceLocation::Remote(remote_connection.clone()),
-                    PathList::new(&path_list_paths),
-                    Utc::now(),
-                )]);
+                welcome.recent_workspaces = Some(vec![RecentWorkspace {
+                    workspace_id: WorkspaceId(1),
+                    location: SerializedWorkspaceLocation::Remote(remote_connection.clone()),
+                    paths: PathList::new(&path_list_paths),
+                    identity_paths: PathList::new(&path_list_paths),
+                    timestamp: chrono::Utc::now(),
+                }]);
                 welcome.open_recent_project(&OpenRecentProject { index: 0 }, window, cx);
             });
         });

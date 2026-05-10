@@ -837,9 +837,10 @@ impl AutoUpdater {
                 let fetched_nex = fetched.pre.as_str()
                     .strip_prefix("nex.")
                     .and_then(|s| s.parse::<u64>().ok());
-                let installed_nex = installed_version.pre.as_str()
-                    .strip_prefix("nex.")
-                    .and_then(|s| s.parse::<u64>().ok());
+                let installed_nex = include_str!("../../zed/NEX_INDEX")
+                    .trim()
+                    .parse::<u64>()
+                    .ok();
                 let mut fetched_base = fetched.clone();
                 fetched_base.pre = semver::Prerelease::EMPTY;
                 fetched_base.build = semver::BuildMetadata::EMPTY;
@@ -849,12 +850,10 @@ impl AutoUpdater {
                 let should_download = if fetched_base != installed_base {
                     fetched_base > installed_base
                 } else {
-                    // Same base version: compare nex indices.
-                    // If installed has no nex index (local/dev build), always update.
                     match (fetched_nex, installed_nex) {
                         (Some(f), Some(i)) => f > i,
                         (Some(_), None) => {
-                            log::warn!("Auto Update: installed Nexdynamic build has no nex version index — was it built without ZED_APP_VERSION? Skipping update to avoid loop.");
+                            log::warn!("Auto Update: NEX_INDEX not set in this build, skipping update to avoid loop. Use script/release-nexdynamic to build.");
                             false
                         }
                         _ => false,

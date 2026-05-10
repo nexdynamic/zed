@@ -20,8 +20,12 @@ VERSION="${ZED_VERSION}-nex.${NEX_INDEX}"
 
 echo "Building Nexdynamic ${VERSION}..."
 
+# Bake the nex index into the binary at compile time, restore on exit
+echo "${NEX_INDEX}" > crates/zed/NEX_INDEX
+trap 'echo "" > crates/zed/NEX_INDEX' EXIT
+
 echo nexdynamic > crates/zed/RELEASE_CHANNEL
-ZED_APP_VERSION="${VERSION}" script/bundle-mac
+script/bundle-mac
 
 DMG="target/aarch64-apple-darwin/release/Zed-aarch64.dmg"
 if [ ! -f "$DMG" ]; then

@@ -1390,7 +1390,18 @@ fn open_about_window(cx: &mut App) {
             } else {
                 ""
             };
-            let message: SharedString = format!("{release_channel_name} {version} {debug}").into();
+            let nex_suffix = if release_channel == ReleaseChannel::Nexdynamic {
+                let nex_index = include_str!("../NEX_INDEX").trim();
+                if nex_index.is_empty() {
+                    String::new()
+                } else {
+                    format!("-nex.{nex_index}")
+                }
+            } else {
+                String::new()
+            };
+            let message: SharedString =
+                format!("{release_channel_name} {version}{nex_suffix} {debug}").into();
             let commit = AppCommitSha::try_global(cx)
                 .map(|sha| sha.full())
                 .filter(|commit| !commit.is_empty())

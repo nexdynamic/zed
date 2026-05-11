@@ -1,8 +1,9 @@
 name: Release Nexdynamic
 
 on:
-  push:
-    branches: [nexdynamic]
+  workflow_run:
+    workflows: ["Merge Main into Nexdynamic"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:

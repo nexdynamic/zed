@@ -1,6 +1,6 @@
 use crate::{
     NewFile, Open, OpenMode, PathList, RecentWorkspace, SerializedWorkspaceLocation,
-    ToggleWorkspaceSidebar, Workspace,
+    ToggleWorkspaceSidebar, Workspace, WorkspaceId,
     item::{Item, ItemEvent},
     persistence::WorkspaceDb,
 };
@@ -341,22 +341,19 @@ impl WelcomePage {
         cx: &mut Context<Self>,
     ) {
         if let Some(recent_workspaces) = &self.recent_workspaces {
-            if let Some((workspace_id, location, paths, _timestamp)) =
-                recent_workspaces.get(action.index)
-            {
+            if let Some(recent) = recent_workspaces.get(action.index) {
                 let request = RecentWorkspaceOpenRequest {
-                    workspace_id: *workspace_id,
-                    location: location.clone(),
-                    paths: paths.clone(),
+                    workspace_id: recent.workspace_id,
+                    location: recent.location.clone(),
+                    paths: recent.paths.clone(),
                 };
                 if open_recent_workspace(request, self.workspace.clone(), window, cx) {
                     return;
                 }
 
-                match location {
+                match &recent.location {
                     SerializedWorkspaceLocation::Local => {
-                        let paths = paths.clone();
-                        let paths = paths.paths().to_vec();
+                        let paths = recent.paths.paths().to_vec();
                         self.workspace
                             .update(cx, |workspace, cx| {
                                 workspace
@@ -755,12 +752,13 @@ mod tests {
             let welcome = cx.new(|cx| WelcomePage::new(workspace.downgrade(), false, window, cx));
             welcome.update(cx, |welcome, cx| {
                 let path_list_paths = [project_path.clone()];
-                welcome.recent_workspaces = Some(vec![(
-                    WorkspaceId(1),
-                    SerializedWorkspaceLocation::Remote(remote_connection.clone()),
-                    PathList::new(&path_list_paths),
-                    Utc::now(),
-                )]);
+                welcome.recent_workspaces = Some(vec![RecentWorkspace {
+                    workspace_id: WorkspaceId(1),
+                    location: SerializedWorkspaceLocation::Remote(remote_connection.clone()),
+                    paths: PathList::new(&path_list_paths),
+                    identity_paths: PathList::new(&path_list_paths),
+                    timestamp: Utc::now(),
+                }]);
                 welcome.open_recent_project(&OpenRecentProject { index: 0 }, window, cx);
             });
         });
@@ -813,12 +811,13 @@ mod tests {
             let welcome = cx.new(|cx| WelcomePage::new(workspace.downgrade(), false, window, cx));
             welcome.update(cx, |welcome, cx| {
                 let path_list_paths = [project_path.clone()];
-                welcome.recent_workspaces = Some(vec![(
-                    WorkspaceId(1),
-                    SerializedWorkspaceLocation::Remote(remote_connection.clone()),
-                    PathList::new(&path_list_paths),
-                    Utc::now(),
-                )]);
+                welcome.recent_workspaces = Some(vec![RecentWorkspace {
+                    workspace_id: WorkspaceId(1),
+                    location: SerializedWorkspaceLocation::Remote(remote_connection.clone()),
+                    paths: PathList::new(&path_list_paths),
+                    identity_paths: PathList::new(&path_list_paths),
+                    timestamp: Utc::now(),
+                }]);
                 welcome.open_recent_project(&OpenRecentProject { index: 0 }, window, cx);
             });
         });

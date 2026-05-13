@@ -5,16 +5,10 @@ use language::CursorShape;
 use project::project_settings::DiagnosticSeverity;
 pub use settings::{
     CodeLens, CompletionDetailAlignment, CurrentLineHighlight, DelayMs, DiffViewStyle, DisplayIn,
-<<<<<<< HEAD
     DockSide, DocumentColorsRenderMode, DoubleClickInMultibuffer, GoToDefinitionFallback,
-    GoToDefinitionScrollStrategy, HideMouseMode, MinimapThumb, MinimapThumbBorder,
-    MultiCursorModifier, ProjectSearchMode, ScrollBeyondLastLine, ScrollbarDiagnostics,
-    SeedQuerySetting, ShowMinimap, SnippetSortOrder,
-=======
-    DocumentColorsRenderMode, DoubleClickInMultibuffer, GoToDefinitionFallback,
     GoToDefinitionScrollStrategy, MinimapThumb, MinimapThumbBorder, MultiCursorModifier,
-    ScrollBeyondLastLine, ScrollbarDiagnostics, SeedQuerySetting, ShowMinimap, SnippetSortOrder,
->>>>>>> main
+    ProjectSearchMode, ScrollBeyondLastLine, ScrollbarDiagnostics, SeedQuerySetting, ShowMinimap,
+    SnippetSortOrder,
 };
 use settings::{RegisterSetting, RelativeLineNumbers, Settings};
 use ui::scrollbars::ShowScrollbar;

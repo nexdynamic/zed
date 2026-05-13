@@ -1,14 +1,10 @@
 name: Merge Main into Nexdynamic
 
 on:
-  workflow_run:
-    workflows: ["Sync Upstream"]
-    types: [completed]
   workflow_dispatch:
 
 jobs:
   merge:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,9 +12,15 @@ jobs:
           ref: nexdynamic
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
-      - run: |
+      - name: Merge main into nexdynamic
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git merge origin/main --no-edit
           git push origin nexdynamic
+
+      - name: Trigger release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: gh workflow run release-nexdynamic.yml

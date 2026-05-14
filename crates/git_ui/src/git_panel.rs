@@ -11,7 +11,7 @@ use crate::{
 };
 use agent_settings::AgentSettings;
 use alacritty_terminal::vte::ansi;
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use askpass::AskPassDelegate;
 use collections::{BTreeMap, HashMap, HashSet};
 use db::kvp::KeyValueStore;
@@ -26,8 +26,8 @@ use futures::channel::oneshot::Canceled;
 use git::commit::ParsedCommitMessage;
 use git::repository::{
     Branch, CommitDetails, CommitOptions, CommitSummary, DiffType, FetchOptions, GitCommitTemplate,
-    GitCommitter, PushOptions, Remote, RemoteCommandOutput, ResetMode, Upstream, UpstreamTracking,
-    UpstreamTrackingStatus, get_git_committer,
+    GitCommitter, HistoryOperationKind, PushOptions, Remote, RemoteCommandOutput, ResetMode,
+    Upstream, UpstreamTracking, UpstreamTrackingStatus, get_git_committer,
 };
 use git::stash::GitStash;
 use git::status::{DiffStat, StageStatus};
@@ -38,8 +38,8 @@ use git::{
 };
 use gpui::{
     AbsoluteLength, Action, Anchor, AsyncApp, AsyncWindowContext, Bounds, ClickEvent, DismissEvent,
-    Empty, Entity, EventEmitter, FocusHandle, Focusable, KeyContext, MouseButton, MouseDownEvent,
-    Point, PromptLevel, ScrollStrategy, Subscription, Task, TaskExt, TextStyle,
+    Empty, Entity, EventEmitter, FocusHandle, Focusable, FontWeight, KeyContext, MouseButton,
+    MouseDownEvent, Point, PromptLevel, ScrollStrategy, Subscription, Task, TaskExt, TextStyle,
     UniformListScrollHandle, WeakEntity, actions, anchored, deferred, point, size, uniform_list,
 };
 use itertools::Itertools;
@@ -55,7 +55,10 @@ use panel::{PanelHeader, panel_button, panel_filled_button, panel_icon_button};
 use project::git_store::GitAccess;
 use project::{
     Fs, Project, ProjectPath,
-    git_store::{GitStoreEvent, Repository, RepositoryEvent, RepositoryId, pending_op},
+    git_store::{
+        GitStoreEvent, HistoryOperationPhase, HistoryOperationState, Repository, RepositoryEvent,
+        RepositoryId, pending_op,
+    },
     project_settings::{GitPathStyle, ProjectSettings},
 };
 use prompt_store::{BuiltInPrompt, PromptId, PromptStore, RULES_FILE_NAMES};
@@ -665,6 +668,7 @@ pub struct GitPanel {
     commit_template: Option<GitCommitTemplate>,
     bulk_staging: Option<BulkStaging>,
     stash_entries: GitStash,
+    show_force_push_after_rebase: bool,
 
     _settings_subscription: Subscription,
     git_access: GitAccess,
@@ -856,6 +860,7 @@ impl GitPanel {
                 entry_count: 0,
                 bulk_staging: None,
                 stash_entries: Default::default(),
+                show_force_push_after_rebase: false,
                 _settings_subscription,
                 git_access: GitAccess::Yes,
             };
@@ -3040,6 +3045,198 @@ impl GitPanel {
         .detach_and_log_err(cx);
     }
 
+    pub(crate) fn continue_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = repo.update(cx, |repo, cx| repo.continue_history_operation(kind, cx));
+            let output = result.await?;
+
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(kind, "continue", output, cx),
+                Err(error) => {
+                    this.show_error_toast(format!("{} --continue", kind.command_name()), error, cx)
+                }
+            })
+            .ok();
+
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    pub(crate) fn skip_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = repo.update(cx, |repo, cx| repo.skip_history_operation(kind, cx));
+            let output = result.await?;
+
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(kind, "skip", output, cx),
+                Err(error) => {
+                    this.show_error_toast(format!("{} --skip", kind.command_name()), error, cx)
+                }
+            })
+            .ok();
+
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    pub(crate) fn abort_history_operation(
+        &mut self,
+        kind: HistoryOperationKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = repo.update(cx, |repo, cx| repo.abort_history_operation(kind, cx));
+            let output = result.await?;
+
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(kind, "abort", output, cx),
+                Err(error) => {
+                    this.show_error_toast(format!("{} --abort", kind.command_name()), error, cx)
+                }
+            })
+            .ok();
+
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    pub(crate) fn start_rebase(
+        &mut self,
+        interactive: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+        let options: Vec<SharedString> = repo
+            .read(cx)
+            .branch_list
+            .iter()
+            .filter(|branch| !branch.is_head)
+            .map(|branch| branch.name().to_string().into())
+            .collect();
+        let picker = picker_prompt::prompt(
+            "Select a branch or ref to rebase onto",
+            options,
+            self.workspace.clone(),
+            window,
+            cx,
+        );
+
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(ix) = picker.await else {
+                return Ok(());
+            };
+            let base_ref = repo
+                .read_with(cx, |repo, _| {
+                    repo.branch_list
+                        .iter()
+                        .filter(|branch| !branch.is_head)
+                        .nth(ix)
+                        .map(|branch| branch.name().to_string())
+                })
+                .ok_or_else(|| anyhow!("Selected rebase base branch no longer exists"))?;
+
+            let result = repo.update(cx, |repo, cx| {
+                repo.start_rebase(base_ref.clone().into(), interactive, cx)
+            });
+            let output = result.await?;
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(
+                    HistoryOperationKind::Rebase,
+                    "start",
+                    output,
+                    cx,
+                ),
+                Err(error) => this.show_error_toast("rebase", error, cx),
+            })
+            .ok();
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    pub(crate) fn start_cherry_pick(
+        &mut self,
+        commits: Vec<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+        cx.spawn_in(window, async move |this, cx| {
+            let result = repo.update(cx, |repo, cx| repo.start_cherry_pick(commits, cx));
+            let output = result.await?;
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(
+                    HistoryOperationKind::CherryPick,
+                    "start",
+                    output,
+                    cx,
+                ),
+                Err(error) => this.show_error_toast("cherry-pick", error, cx),
+            })
+            .ok();
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
+    pub(crate) fn start_revert(
+        &mut self,
+        commits: Vec<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.active_repository.clone() else {
+            return;
+        };
+        cx.spawn_in(window, async move |this, cx| {
+            let result = repo.update(cx, |repo, cx| repo.start_revert(commits, cx));
+            let output = result.await?;
+            this.update(cx, |this, cx| match output {
+                Ok(output) => this.show_history_operation_output(
+                    HistoryOperationKind::Revert,
+                    "start",
+                    output,
+                    cx,
+                ),
+                Err(error) => this.show_error_toast("revert", error, cx),
+            })
+            .ok();
+            anyhow::Ok(())
+        })
+        .detach_and_log_err(cx);
+    }
+
     pub(crate) fn push(
         &mut self,
         force_push: bool,
@@ -3547,7 +3744,18 @@ impl GitPanel {
             .as_ref()
             .and_then(|op| self.entry_by_path(&op.anchor));
 
+        let previous_repo_id = self
+            .active_repository
+            .as_ref()
+            .map(|repository| repository.read(cx).snapshot().id);
         self.active_repository = self.project.read(cx).active_repository(cx);
+        let current_repo_id = self
+            .active_repository
+            .as_ref()
+            .map(|repository| repository.read(cx).snapshot().id);
+        if previous_repo_id != current_repo_id {
+            self.show_force_push_after_rebase = false;
+        }
         self.entries.clear();
         self.entries_indices.clear();
         self.single_staged_entry.take();
@@ -3906,6 +4114,10 @@ impl GitPanel {
         info: RemoteCommandOutput,
         cx: &mut Context<Self>,
     ) {
+        if matches!(action, RemoteAction::Push(..)) {
+            self.show_force_push_after_rebase = false;
+        }
+
         let Some(workspace) = self.workspace.upgrade() else {
             return;
         };
@@ -3949,6 +4161,50 @@ impl GitPanel {
                 }
                 .dismiss_button(true)
             });
+            workspace.toggle_status_toast(status_toast, cx)
+        });
+    }
+
+    fn show_history_operation_output(
+        &mut self,
+        kind: HistoryOperationKind,
+        phase: &'static str,
+        output: RemoteCommandOutput,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_force_push_after_rebase =
+            kind == HistoryOperationKind::Rebase && matches!(phase, "continue" | "start");
+
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+
+        workspace.update(cx, |workspace, cx| {
+            let message = format!("{} {} succeeded", kind.command_name(), phase);
+            let operation = format!("git {} --{}", kind.command_name(), phase);
+            let workspace_weak = cx.weak_entity();
+            let output_for_log = output.clone();
+
+            let status_toast = StatusToast::new(message, cx, move |this, _cx| {
+                let this = this
+                    .icon(
+                        Icon::new(IconName::GitBranch)
+                            .size(IconSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .action("View Log", move |window, cx| {
+                        let output = output_for_log.clone();
+                        let combined =
+                            format!("stdout:\n{}\n\nstderr:\n{}", output.stdout, output.stderr);
+                        workspace_weak
+                            .update(cx, |workspace, cx| {
+                                open_output(operation.as_str(), workspace, &combined, window, cx)
+                            })
+                            .ok();
+                    });
+                this.dismiss_button(true)
+            });
+
             workspace.toggle_status_toast(status_toast, cx)
         });
     }
@@ -4379,6 +4635,174 @@ impl GitPanel {
         )
     }
 
+    fn active_history_operation_state(&self, cx: &App) -> Option<HistoryOperationState> {
+        self.active_repository.as_ref().and_then(|repository| {
+            repository
+                .read(cx)
+                .snapshot()
+                .merge
+                .history_operation
+                .clone()
+        })
+    }
+
+    fn render_history_operation_banner(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if let Some(operation) = self.active_history_operation_state(cx) {
+            let label = match operation.kind {
+                HistoryOperationKind::Rebase => "Rebase in progress",
+                HistoryOperationKind::CherryPick => "Cherry-pick in progress",
+                HistoryOperationKind::Revert => "Revert in progress",
+                HistoryOperationKind::Apply => "Apply in progress",
+                HistoryOperationKind::Merge => "Merge in progress",
+            };
+            let detail = operation.progress.map_or_else(
+                || format!("{} conflict(s)", operation.unresolved_conflict_count),
+                |progress| {
+                    format!(
+                        "step {}/{} • {} conflict(s)",
+                        progress.current_step,
+                        progress.total_steps,
+                        operation.unresolved_conflict_count
+                    )
+                },
+            );
+            let is_conflicted = matches!(operation.phase, HistoryOperationPhase::Conflicts);
+
+            return Some(
+                h_flex()
+                    .w_full()
+                    .px_2()
+                    .py_1()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(cx.theme().colors().border_variant)
+                    .bg(if is_conflicted {
+                        cx.theme().status().conflict_background.opacity(0.4)
+                    } else {
+                        cx.theme().status().info_background.opacity(0.25)
+                    })
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(
+                                Label::new(label)
+                                    .size(LabelSize::Small)
+                                    .weight(FontWeight::MEDIUM),
+                            )
+                            .child(
+                                Label::new(detail)
+                                    .size(LabelSize::XSmall)
+                                    .color(Color::Muted),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Button::new("history-operation-continue", "Continue")
+                                    .label_size(LabelSize::Small)
+                                    .disabled(operation.kind == HistoryOperationKind::Merge)
+                                    .on_click({
+                                        let panel = cx.weak_entity();
+                                        move |_, window, cx| {
+                                            panel
+                                                .update(cx, |panel, cx| {
+                                                    panel.continue_history_operation(
+                                                        operation.kind,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                })
+                                                .ok();
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new("history-operation-skip", "Skip")
+                                    .label_size(LabelSize::Small)
+                                    .disabled(matches!(operation.kind, HistoryOperationKind::Merge))
+                                    .on_click({
+                                        let panel = cx.weak_entity();
+                                        move |_, window, cx| {
+                                            panel
+                                                .update(cx, |panel, cx| {
+                                                    panel.skip_history_operation(
+                                                        operation.kind,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                })
+                                                .ok();
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new("history-operation-abort", "Abort")
+                                    .label_size(LabelSize::Small)
+                                    .on_click({
+                                        let panel = cx.weak_entity();
+                                        move |_, window, cx| {
+                                            panel
+                                                .update(cx, |panel, cx| {
+                                                    panel.abort_history_operation(
+                                                        operation.kind,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                })
+                                                .ok();
+                                        }
+                                    }),
+                            ),
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        if self.show_force_push_after_rebase {
+            return Some(
+                h_flex()
+                    .w_full()
+                    .px_2()
+                    .py_1()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(cx.theme().colors().border_variant)
+                    .bg(cx.theme().status().info_background.opacity(0.25))
+                    .child(
+                        Label::new("Rebase completed.")
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    )
+                    .child(
+                        Button::new(
+                            "history-operation-force-push",
+                            "Push with --force-with-lease",
+                        )
+                        .label_size(LabelSize::Small)
+                        .on_click({
+                            let panel = cx.weak_entity();
+                            move |_, window, cx| {
+                                panel
+                                    .update(cx, |panel, cx| {
+                                        panel.show_force_push_after_rebase = false;
+                                        panel.push(true, false, window, cx);
+                                    })
+                                    .ok();
+                            }
+                        }),
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        None
+    }
+
     pub(crate) fn render_remote_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let branch = self.active_repository.as_ref()?.read(cx).branch.clone();
         if !self.can_push_and_pull(cx) {
@@ -4453,6 +4877,7 @@ impl GitPanel {
                 head_commit,
                 Some(git_panel),
             ))
+            .children(self.render_history_operation_banner(window, cx))
             .when(title_exceeds_limit, |this| {
                 this.child(
                     h_flex()

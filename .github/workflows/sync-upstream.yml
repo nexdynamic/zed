@@ -28,17 +28,15 @@ jobs:
             echo "new=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Sync new release
+      - name: Reset main to upstream tag
         if: steps.check.outputs.new == 'true'
         run: |
           UPSTREAM_TAG="${{ steps.check.outputs.upstream }}"
-          echo "New upstream release: ${UPSTREAM_TAG} (had ${{ steps.check.outputs.local }})"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "Resetting main to ${UPSTREAM_TAG} (was ${{ steps.check.outputs.local }})"
           git remote add upstream https://github.com/zed-industries/zed.git
           git fetch upstream tag "${UPSTREAM_TAG}" --no-tags
-          git merge "${UPSTREAM_TAG}" --no-edit
-          git push origin main
+          git reset --hard "${UPSTREAM_TAG}"
+          git push origin main --force-with-lease
 
       - name: Trigger merge workflow
         if: steps.check.outputs.new == 'true'

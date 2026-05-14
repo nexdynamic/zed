@@ -1945,7 +1945,7 @@ impl ProjectSearchView {
                 editor
                     .update_in(cx, |editor, window, cx| {
                         let autoscroll = match scroll_offset {
-                            Some(scroll_offset) => Autoscroll::top_relative(scroll_offset as usize),
+                            Some(scroll_offset) => Autoscroll::top_relative(scroll_offset as f64),
                             None => Autoscroll::newest(),
                         };
                         let multibuffer_snapshot = editor.buffer().read(cx).snapshot(cx);

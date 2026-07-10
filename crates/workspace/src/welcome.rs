@@ -1,6 +1,6 @@
 use crate::{
     NewFile, Open, OpenMode, PathList, RecentWorkspace, SerializedWorkspaceLocation,
-    ToggleWorkspaceSidebar, Workspace, WorkspaceId,
+    ToggleWorkspaceSidebar, Workspace, WorkspaceId, WorkspaceSettings,
     item::{Item, ItemEvent},
     persistence::WorkspaceDb,
 };
@@ -15,7 +15,7 @@ use menu::{SelectNext, SelectPrevious};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use settings::Settings;
+use settings::{DefaultOpenBehavior, Settings};
 use std::rc::Rc;
 use ui::{ButtonLike, Divider, DividerColor, KeyBinding, Vector, VectorName, prelude::*};
 use util::ResultExt;
@@ -354,10 +354,15 @@ impl WelcomePage {
                 match &recent.location {
                     SerializedWorkspaceLocation::Local => {
                         let paths = recent.paths.paths().to_vec();
+                        let open_mode = match WorkspaceSettings::get_global(cx).default_open_behavior
+                        {
+                            DefaultOpenBehavior::ExistingWindow => OpenMode::Activate,
+                            DefaultOpenBehavior::NewWindow => OpenMode::NewWindow,
+                        };
                         self.workspace
                             .update(cx, |workspace, cx| {
                                 workspace
-                                    .open_workspace_for_paths(OpenMode::Activate, paths, window, cx)
+                                    .open_workspace_for_paths(open_mode, paths, window, cx)
                                     .detach_and_log_err(cx);
                             })
                             .log_err();

@@ -3,8 +3,9 @@ use std::{num::NonZeroUsize, time::Duration};
 use crate::DockPosition;
 use collections::HashMap;
 use serde::Deserialize;
+use settings::CommandAliasTarget;
 pub use settings::{
-    ActionName, AutosaveSetting, BottomDockLayout, EncodingDisplayOptions, InactiveOpacity,
+    AutosaveSetting, BottomDockLayout, EncodingDisplayOptions, InactiveOpacity,
     PaneSplitDirectionHorizontal, PaneSplitDirectionVertical, RegisterSetting,
     RestoreOnStartupBehavior, Settings,
 };
@@ -21,12 +22,13 @@ pub struct WorkspaceSettings {
     pub autosave: AutosaveSetting,
     pub restore_on_startup: settings::RestoreOnStartupBehavior,
     pub cli_default_open_behavior: settings::CliDefaultOpenBehavior,
+    pub default_open_behavior: settings::DefaultOpenBehavior,
     pub restore_on_file_reopen: bool,
     pub show_untitled_buffer_on_empty_workspace: bool,
     pub drop_target_size: f32,
     pub use_system_path_prompts: bool,
     pub use_system_prompts: bool,
-    pub command_aliases: HashMap<String, ActionName>,
+    pub command_aliases: HashMap<String, CommandAliasTarget>,
     pub max_tabs: Option<NonZeroUsize>,
     pub when_closing_with_no_tabs: settings::CloseWindowWhenNoItems,
     pub on_last_window_closed: settings::OnLastWindowClosed,
@@ -102,6 +104,7 @@ impl Settings for WorkspaceSettings {
             autosave: workspace.autosave.unwrap(),
             restore_on_startup: workspace.restore_on_startup.unwrap(),
             cli_default_open_behavior: workspace.cli_default_open_behavior.unwrap(),
+            default_open_behavior: workspace.default_open_behavior.unwrap(),
             restore_on_file_reopen: workspace.restore_on_file_reopen.unwrap(),
             show_untitled_buffer_on_empty_workspace: workspace
                 .show_untitled_buffer_on_empty_workspace

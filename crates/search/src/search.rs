@@ -2,11 +2,12 @@ use bitflags::bitflags;
 pub use buffer_search::BufferSearchBar;
 pub use editor::HighlightKey;
 use editor::SearchSettings;
-use gpui::{Action, App, ClickEvent, FocusHandle, IntoElement, actions};
+use gpui::{Action, App, ClickEvent, Entity, FocusHandle, IntoElement, actions};
 use project::search::SearchQuery;
 pub use project_search::ProjectSearchView;
 use ui::{ButtonStyle, IconButton, IconButtonShape};
 use ui::{Tooltip, prelude::*};
+use util::paths::PathMatcher;
 use workspace::notifications::NotificationId;
 use workspace::{Toast, Workspace};
 pub use zed_actions::search::ToggleIncludeIgnored;
@@ -20,12 +21,14 @@ pub mod project_search;
 pub mod project_search_panel;
 pub(crate) mod search_bar;
 pub mod search_status_button;
+pub mod text_finder;
 
 pub fn init(cx: &mut App) {
     menu::init();
     buffer_search::init(cx);
     project_search::init(cx);
     project_search_panel::init(cx);
+    text_finder::init(cx);
 }
 
 actions!(
@@ -86,6 +89,10 @@ pub enum SearchOption {
     OneMatchPerLine,
     Backwards,
 }
+
+const REPLACE_PLACEHOLDER: &str = "Replace in project…";
+const INCLUDE_PLACEHOLDER: &str = "Include: e.g. src/**/*.rs";
+const EXCLUDE_PLACEHOLDER: &str = "Exclude: e.g. vendor/*, *.lock";
 
 pub enum SearchSource<'a, 'b> {
     Buffer,
@@ -185,6 +192,43 @@ impl SearchOptions {
         options.set(SearchOptions::INCLUDE_IGNORED, settings.include_ignored);
         options.set(SearchOptions::REGEX, settings.regex);
         options
+    }
+
+    /// Build a [`SearchQuery`] from these options, selecting the regex or text
+    /// constructor based on [`SearchOptions::REGEX`]. Inverse of
+    /// [`SearchOptions::from_query`].
+    pub fn build_query(
+        &self,
+        query: impl ToString,
+        files_to_include: PathMatcher,
+        files_to_exclude: PathMatcher,
+        match_full_paths: bool,
+        buffers: Option<Vec<Entity<language::Buffer>>>,
+    ) -> anyhow::Result<SearchQuery> {
+        if self.contains(SearchOptions::REGEX) {
+            SearchQuery::regex(
+                query,
+                self.contains(SearchOptions::WHOLE_WORD),
+                self.contains(SearchOptions::CASE_SENSITIVE),
+                self.contains(SearchOptions::INCLUDE_IGNORED),
+                self.contains(SearchOptions::ONE_MATCH_PER_LINE),
+                files_to_include,
+                files_to_exclude,
+                match_full_paths,
+                buffers,
+            )
+        } else {
+            SearchQuery::text(
+                query,
+                self.contains(SearchOptions::WHOLE_WORD),
+                self.contains(SearchOptions::CASE_SENSITIVE),
+                self.contains(SearchOptions::INCLUDE_IGNORED),
+                files_to_include,
+                files_to_exclude,
+                match_full_paths,
+                buffers,
+            )
+        }
     }
 }
 

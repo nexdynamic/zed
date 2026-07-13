@@ -18,7 +18,17 @@ fi
 TAG="v${ZED_VERSION}-nex.${NEX_INDEX}"
 VERSION="${ZED_VERSION}-nex.${NEX_INDEX}"
 
-echo "Building Nexdynamic ${VERSION}..."
+# Sign with a stable identity so keychain "Always Allow" grants survive updates.
+# An ad-hoc signed release would reset every user's keychain permissions.
+SIGNING_IDENTITY="${MACOS_SIGNING_KEY:-Developer ID Application: Nexdynamic LTD (5K9M2PTCHJ)}"
+if ! security find-identity -v -p codesigning | grep -qF "$SIGNING_IDENTITY"; then
+  echo "error: signing identity \"$SIGNING_IDENTITY\" not found in keychain" >&2
+  echo "Import the Nexdynamic Developer ID certificate (.p12) or set MACOS_SIGNING_KEY." >&2
+  exit 1
+fi
+export MACOS_SIGNING_KEY="$SIGNING_IDENTITY"
+
+echo "Building Nexdynamic ${VERSION} (signing as ${SIGNING_IDENTITY})..."
 
 # Bake the nex index into the binary at compile time, restore on exit
 echo "${NEX_INDEX}" > crates/zed/NEX_INDEX

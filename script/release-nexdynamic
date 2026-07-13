@@ -30,9 +30,11 @@ export MACOS_SIGNING_KEY="$SIGNING_IDENTITY"
 
 echo "Building Nexdynamic ${VERSION} (signing as ${SIGNING_IDENTITY})..."
 
-# Bake the nex index into the binary at compile time, restore on exit
+# Bake the nex index and release channel into the binary at compile time,
+# restoring the developer's local values on exit
+ORIGINAL_RELEASE_CHANNEL=$(<crates/zed/RELEASE_CHANNEL)
 echo "${NEX_INDEX}" > crates/zed/NEX_INDEX
-trap 'echo "" > crates/zed/NEX_INDEX' EXIT
+trap 'echo "" > crates/zed/NEX_INDEX; echo "${ORIGINAL_RELEASE_CHANNEL}" > crates/zed/RELEASE_CHANNEL' EXIT
 
 echo nexdynamic > crates/zed/RELEASE_CHANNEL
 cargo clean -p auto_update 2>/dev/null || true

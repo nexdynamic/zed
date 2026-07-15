@@ -52,9 +52,9 @@ const REMOTE_SERVER_ASSET: &str = "zed-remote-server";
 fn remote_server_release_channel(channel: ReleaseChannel) -> ReleaseChannel {
     match channel {
         // Nexdynamic application releases are not Zed Cloud releases. The
-        // remote server remains the upstream Zed binary for the same source
-        // version and protocol.
-        ReleaseChannel::Nexdynamic => ReleaseChannel::Stable,
+        // custom branch tracks upstream main, whose published remote-server
+        // artifacts are on the Nightly channel.
+        ReleaseChannel::Nexdynamic => ReleaseChannel::Nightly,
         channel => channel,
     }
 }
@@ -1487,7 +1487,7 @@ mod tests {
     fn nexdynamic_remote_servers_use_upstream_zed_release_identity() {
         assert_eq!(
             remote_server_release_channel(ReleaseChannel::Nexdynamic),
-            ReleaseChannel::Stable
+            ReleaseChannel::Nightly
         );
         assert_eq!(
             upstream_remote_server_version(Some("0.217.3+nexdynamic.7.customsha".parse().unwrap())),

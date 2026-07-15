@@ -47,6 +47,37 @@ impl std::error::Error for MissingDependencyError {}
 const POLL_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const NIGHTLY_POLL_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const REMOTE_SERVER_CACHE_LIMIT: usize = 5;
+const REMOTE_SERVER_ASSET: &str = "zed-remote-server";
+
+fn remote_server_release_channel(channel: ReleaseChannel) -> ReleaseChannel {
+    match channel {
+        // Nexdynamic application releases are not Zed Cloud releases. The
+        // remote server remains the upstream Zed binary for the same source
+        // version and protocol.
+        ReleaseChannel::Nexdynamic => ReleaseChannel::Stable,
+        channel => channel,
+    }
+}
+
+fn upstream_remote_server_version(version: Option<Version>) -> Option<Version> {
+    version.map(|mut version| {
+        version.pre = semver::Prerelease::EMPTY;
+        version.build = semver::BuildMetadata::EMPTY;
+        version
+    })
+}
+
+fn validate_remote_server_target(os: &str, arch: &str) -> Result<()> {
+    anyhow::ensure!(
+        matches!(os, "linux" | "macos" | "windows") && matches!(arch, "x86_64" | "aarch64"),
+        "unsupported remote server platform: os={os} arch={arch}"
+    );
+    Ok(())
+}
+
+fn is_nexdynamic_application_asset(name: &str, arch: &str) -> bool {
+    name.contains(arch) && name.ends_with(".dmg")
+}
 
 #[cfg(target_os = "linux")]
 fn linux_rsync_install_hint() -> &'static str {
@@ -572,6 +603,7 @@ impl AutoUpdater {
         set_status: impl Fn(&str, &mut AsyncApp) + Send + 'static,
         cx: &mut AsyncApp,
     ) -> Result<PathBuf> {
+        validate_remote_server_target(os, arch)?;
         let this = cx.update(|cx| {
             cx.default_global::<GlobalAutoUpdate>()
                 .0
@@ -580,11 +612,13 @@ impl AutoUpdater {
         })?;
 
         set_status("Fetching remote server release", cx);
+        let upstream_channel = remote_server_release_channel(release_channel);
+        let upstream_version = upstream_remote_server_version(version);
         let release = Self::get_release_asset(
             &this,
-            release_channel,
-            version,
-            "zed-remote-server",
+            upstream_channel,
+            upstream_version,
+            REMOTE_SERVER_ASSET,
             os,
             arch,
             cx,
@@ -628,6 +662,7 @@ impl AutoUpdater {
         arch: &str,
         cx: &mut AsyncApp,
     ) -> Result<Option<String>> {
+        validate_remote_server_target(os, arch)?;
         let this = cx.update(|cx| {
             cx.default_global::<GlobalAutoUpdate>()
                 .0
@@ -635,9 +670,18 @@ impl AutoUpdater {
                 .context("auto-update not initialized")
         })?;
 
-        let release =
-            Self::get_release_asset(&this, channel, version, "zed-remote-server", os, arch, cx)
-                .await?;
+        let upstream_channel = remote_server_release_channel(channel);
+        let upstream_version = upstream_remote_server_version(version);
+        let release = Self::get_release_asset(
+            &this,
+            upstream_channel,
+            upstream_version,
+            REMOTE_SERVER_ASSET,
+            os,
+            arch,
+            cx,
+        )
+        .await?;
 
         Ok(Some(release.url))
     }
@@ -654,9 +698,20 @@ impl AutoUpdater {
         let client = this.read_with(cx, |this, _| this.client.clone());
         let http_client = client.http_client();
 
-        if release_channel == ReleaseChannel::Nexdynamic {
+        if release_channel == ReleaseChannel::Nexdynamic && asset == "zed" {
+            log::info!(
+                "resolving application release: source=nexdynamic-github os={os} arch={arch} asset={asset}"
+            );
             return Self::get_nexdynamic_release_asset(http_client, os, arch).await;
         }
+
+        let requested_version = version.as_ref().map(ToString::to_string);
+
+        log::info!(
+            "resolving release: source=zed-cloud os={os} arch={arch} channel={} version={} asset={asset}",
+            release_channel.dev_name(),
+            requested_version.as_deref().unwrap_or("latest"),
+        );
 
         let (system_id, metrics_id, is_staff) = if client.telemetry().metrics_enabled() {
             (
@@ -751,11 +806,11 @@ impl AutoUpdater {
 
         let version = release.tag_name.trim_start_matches('v').to_string();
 
-        // Match asset by os and arch suffix, e.g. "Zed-Nexdynamic-aarch64.dmg"
+        // Nexdynamic application releases contain branded DMGs only.
         let asset = release
             .assets
             .into_iter()
-            .find(|a| a.name.contains(arch) && a.name.ends_with(".dmg"))
+            .find(|a| is_nexdynamic_application_asset(&a.name, arch))
             .with_context(|| format!("no Nexdynamic DMG asset found for os={os} arch={arch}"))?;
 
         Ok(ReleaseAsset {
@@ -1427,6 +1482,39 @@ mod tests {
         },
     };
     use tempfile::tempdir;
+
+    #[test]
+    fn nexdynamic_remote_servers_use_upstream_zed_release_identity() {
+        assert_eq!(
+            remote_server_release_channel(ReleaseChannel::Nexdynamic),
+            ReleaseChannel::Stable
+        );
+        assert_eq!(
+            upstream_remote_server_version(Some("0.217.3+nexdynamic.7.customsha".parse().unwrap())),
+            Some("0.217.3".parse().unwrap())
+        );
+        assert_eq!(REMOTE_SERVER_ASSET, "zed-remote-server");
+        assert!(!REMOTE_SERVER_ASSET.ends_with(".dmg"));
+    }
+
+    #[test]
+    fn nexdynamic_application_updates_select_branded_dmgs_only() {
+        assert!(is_nexdynamic_application_asset(
+            "Zed-Nexdynamic-aarch64.dmg",
+            "aarch64"
+        ));
+        assert!(!is_nexdynamic_application_asset(
+            "zed-remote-server-linux-aarch64.gz",
+            "aarch64"
+        ));
+    }
+
+    #[test]
+    fn remote_server_target_validation_rejects_unsupported_platforms() {
+        assert!(validate_remote_server_target("linux", "x86_64").is_ok());
+        assert!(validate_remote_server_target("linux", "i686").is_err());
+        assert!(validate_remote_server_target("freebsd", "x86_64").is_err());
+    }
 
     #[ctor::ctor(unsafe)]
     fn init_logger() {
